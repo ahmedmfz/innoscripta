@@ -26,9 +26,9 @@ class ArticleResource extends JsonResource
            'image_url'     => $this->image_url,
            'language'      => $this->language,
            'published_at'  => optional($this->published_at)->toIso8601String(),
-           'source'        => new SourceResource($this->source),
-           'authors'       => AuthorResource::collection($this->authors),
-           'categories'    => CategoryResource::collection($this->categories),
+           'source'        => new SourceResource($this->whenLoaded('source')),
+           'authors'       => AuthorResource::collection($this->whenLoaded('authors')),
+           'categories'    => CategoryResource::collection($this->whenLoaded('categories')),
         ];
     }
 }

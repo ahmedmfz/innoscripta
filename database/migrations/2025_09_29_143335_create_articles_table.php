@@ -16,12 +16,12 @@ return new class extends Migration
             $table->foreignId('source_id')->constrained('sources');
             $table->string('external_id');                      // provider id (article_id)
             $table->string('canonical_url')->index();           // link
-            $table->string('title');
+            $table->text('title');
             $table->text('summary')->nullable();                // description
             $table->longText('content')->nullable();
-            $table->string('language', 8)->nullable()->index(); // 'en'
+            $table->string('language', 30)->nullable()->index(); // 'en'
             $table->timestamp('published_at')->index();
-            $table->string('image_url')->nullable();
+            $table->text('image_url')->nullable();
             $table->string('canonical_url_hash', 64)->nullable()->index();
             $table->boolean('is_active')->default(true);
             $table->json('raw')->nullable();

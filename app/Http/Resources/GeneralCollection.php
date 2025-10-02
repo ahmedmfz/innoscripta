@@ -16,7 +16,6 @@ class GeneralCollection extends ResourceCollection
         }
     }
 
-
     public function paginationInformation($request, $paginated, $default)
     {
         unset($default['links']);

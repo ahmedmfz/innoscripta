@@ -11,7 +11,7 @@ final class GuardianNormalizer implements SourceNormalizer
     {
         $normalizedCategories = [];
         if (!empty($rawItem['sectionName'])) $normalizedCategories[] = strtolower((string) $rawItem['sectionName']);
-        if (!empty($rawItem['pillarName']))  $normalizedCategories[] = strtolower((string) $rawItem['pillarName']);
+//         if (!empty($rawItem['pillarName']))  $normalizedCategories[] = strtolower((string) $rawItem['pillarName']);
         $normalizedCategories = array_values(array_unique(array_filter($normalizedCategories)));
 
         return new RemoteArticleDTO(

@@ -17,7 +17,7 @@ final class BuildArticlePayloadAction
             'title'              => $dto->title,
             'summary'            => $dto->summary,
             'content'            => $dto->content,
-            'canonical_url'                => $dto->url,                 // keep 'url' (not 'canonical_url')
+            'canonical_url'                => $dto->url,        // keep 'url' (not 'canonical_url')
             'image_url'          => $dto->image_url,
             'language'           => $dto->language,
             'published_at'       => $dto->published_at,

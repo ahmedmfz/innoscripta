@@ -1,61 +1,194 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# News Hub
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Ingest and normalize news from multiple providers (NewsAPI, The Guardian, NewsData.io), then upsert into a unified schema for use by your app.
 
-## About Laravel
+## Table of contents
+- [Features](#features)
+- [Architecture](#architecture)
+- [Requirements](#requirements)
+- [Quick start](#quick-start)
+- [Configuration](#configuration)
+- [Running](#running)
+- [Scheduling (Laravel 11+)](#scheduling-laravel-11)
+- [Data flow](#data-flow)
+- [Extending: add a new source](#extending-add-a-new-source)
+- [Resilience & limits](#resilience--limits)
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+---
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Features
+- Streamed fetching (`fetchSince()`), low memory, paginated per provider
+- Per-source **normalizers** → consistent `RemoteArticleDTO`
+- Idempotent ingest with canonical URL hash, de-dup, and upsert
+- Authors/categories sync (idempotent)
+- Rate limits: **25 requests / 15 minutes / source**
+- Circuit breaker + cached last-success fallback
+- Safe sanitization to avoid DB truncation crashes (language codes, string clamps)
+- Scheduled ingestion every 15 minutes (Asia/Dubai)
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+---
 
-## Learning Laravel
+## Architecture
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+```
+app/Domain/NewsHub
+├─ Actions/               # small single-responsibility domain actions
+├─ DTOs/          # RemoteArticleDTO, etc.
+├─ Normalizers/           # Source → RemoteArticleDTO
+├─ Repositories/          # ArticleRepositoryInterface + Eloquent impl
+├─ Services/              # ArticleIngestService (normalize → upsert)
+└─ Sources/
+   ├─ Contracts/          # SourceFetcher, SourceNormalizer
+   ├─ Fetchers/           # BaseHttpFetcher + {NewsApi,Guardian,NewsData}Fetcher
+   ├─ SourceFetcherFactory.php
+   └─ SourceNormalizerFactory.php
+```
 
-You may also try the [Laravel Bootcamp](https://bootcamp.laravel.com), where you will be guided through building a modern Laravel application from scratch.
+- **Fetchers** talk to external APIs and yield **raw** provider items.
+- **Normalizers** map raw items → `RemoteArticleDTO`.
+- **ArticleIngestService** dedupes via canonical URL hash, upserts, syncs authors/categories.
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+---
 
-## Laravel Sponsors
+## Requirements
+- PHP 8.2+
+- Laravel 11 or 12 skeleton (routes/console.php scheduler)
+- MySQL 8+ (or compatible)
+- Redis (recommended) for locks/rate-limits
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+---
 
-### Premium Partners
+## Quick start
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+```bash
+cp .env.example .env
+# set APP_TIMEZONE, DB_*, and provider keys:
+# NEWSAPI_API_KEY=...
+# GUARDIAN_API_KEY=...
+# NEWSDATA_API_KEY=...
 
-## Contributing
+composer install
+php artisan key:generate
+php artisan migrate
+php artisan config:clear && php artisan config:cache
+```
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+---
 
-## Code of Conduct
+## Configuration
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+`config/newshub.php`
+```php
+return [
+    'sources' => [
+        'newsdata' => [
+            'slug' => 'newsdata',
+            'name' => 'NewsData.io',
+            'base_url' => 'https://newsdata.io/api/1/latest',
+            'api_key' => env('NEWSDATA_DATA_KEY'),
+            'default_params' => [
+                'q' => 'US blogs',
+                'prioritydomain' => 'top',
+            ],
+        ],
+        'newsapi' => [
+            'slug' => 'newsapi',
+            'name' => 'NewsAPI.org',
+            'base_url' => 'https://newsapi.org/v2/everything',
+            'api_key' => env('NEWSAPI_API_KEY'),
+            'default_params' => [
+                'q' => 'blogs',
+            ],
+        ],
+        'guardian' => [
+            'slug'  => 'guardian',
+            'name'  => 'The Guardian',
+            'base_url' => 'https://content.guardianapis.com/search',
+            'api_key'  => env('GUARDIAN_API_KEY'),
+            'default_params' => [
+                'q' => '',
+                'page_size' => 10,
+            ],
+        ],
+    ],
+];
+```
 
-## Security Vulnerabilities
+**Providers registered in** `App\Providers\NewsServiceProvider` wire fetchers/normalizers from this config.
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+---
 
-## License
+## Running
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+### One-off ingest (CLI)
+```bash
+php artisan news:ingest --source=all --since="-24 hours"
+# or only a single source
+php artisan news:ingest --source=guardian --since="2025-10-01"
+```
+
+- `--source=`: `all | newsdata | newsapi | guardian`
+- `--since=`: ISO8601 or relative (e.g., `-2 hours`)
+
+---
+
+## Scheduling (Laravel 11+)
+
+In `routes/console.php`:
+
+```php
+use Illuminate\Support\Facades\Schedule;
+
+Schedule::command('news:ingest', ['--source' => 'all'])
+    ->everyFifteenMinutes()
+    ->withoutOverlapping()
+    ->appendOutputTo(storage_path('logs/news_ingest.log'))
+    ->timezone(config('app.timezone'));
+```
+
+Enable the scheduler on your server:
+
+```
+* * * * * /usr/bin/php /path/to/your/app/artisan schedule:run >> /dev/null 2>&1
+```
+
+> For multi-server deployments, add `->onOneServer()` and use a lock-capable cache (Redis).
+
+---
+
+
+## Data flow
+
+1) **Fetcher** (`SourceFetcher::fetchSince(?Carbon)`): streams raw provider items with pagination and rate-limits (25 req / 15m).
+2) **Normalizer**: transforms each raw item → `RemoteArticleDTO` (consistent fields, ISO 8601 time, ISO-639-1 language).
+3) **Service** (`ArticleIngestService::upsertMany()`):
+    - compute canonical URL hash
+    - skip duplicates
+    - upsert article
+    - sync authors & categories
+    - sanitize fields to column sizes and safe formats
+
+---
+
+## Extending: add a new source
+
+1) Implement a fetcher:
+    - Extend `BaseHttpFetcher`
+    - Implement: `slug()`, `authHeaders()/authQuery()`, `queryForSince()`, `extractItems()`, `nextPageParams()`
+2) Implement a normalizer for that provider → `RemoteArticleDTO`
+3) Register in `NewsServiceProvider` factories with config
+4) Add credentials to `.env` and defaults to `config/newshub.php`
+
+---
+
+## Resilience & limits
+- **Rate limit:** 25 requests / 15 minutes per source (Laravel `RateLimiter`).
+- **Circuit breaker:** Open after repeated failures; falls back to last successful JSON response in cache.
+- **Sanitization:** Central sanitizer clamps strings and normalizes language (prevents DB “data too long” errors).
+- **Per-item isolation:** ingest handles each item inside a try/catch (bad item won’t abort batch).
+
+---
+
+
+**That’s it!**  
+With config keys set and the scheduler running, your app ingests fresh news every 15 minutes, safely and consistently.

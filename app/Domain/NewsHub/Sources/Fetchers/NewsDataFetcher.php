@@ -1,30 +1,58 @@
 <?php
 
 namespace App\Domain\NewsHub\Sources\Fetchers;
-
-use App\Domain\NewsHub\Sources\Contracts\SourceFetcher;
+use App\Domain\NewsHub\Sources\Fetchers\BaseHttpFetcher;
 use Carbon\Carbon;
-use Illuminate\Http\Client\RequestException;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Http;
 
-class NewsDataFetcher implements SourceFetcher
+final class NewsDataFetcher extends BaseHttpFetcher
 {
-    public function fetchSince(?Carbon $since): iterable
+    public function __construct(
+        string $baseUrl,
+        private readonly string $apiKey,
+        array $defaults = []
+    ) {
+        parent::__construct($baseUrl, $defaults);
+    }
+
+
+    public function slug(): string
     {
-       return [[
-          "article_id" => "4acdb159c6bebf82c137ff3aea22f561",
-          "title" => "Today’s NYT Pips Hints And Solutions For Wednesday, October 1st",
-          "link" => "https://www.forbes.com/sites/erikkain/2025/09/30/todays-nyt-pips-hints-and-solutions-for-wednesday-october-1st/",
-          "creator" => ["","Erik Kain, Senior Contributor"],
-          "description" => "Looking for help with today's New York Times Pips?...",
-          "content" => "ONLY AVAILABLE IN PAID PLANS",
-          "pubDate" => "2025-09-30 23:49:50",
-          "pubDateTZ" => "UTC",
-          "image_url" => "https://imageio.forbes.com/specials-images/imageserve/68ab7aaa205e351d8e7e68df/0x0.jpg?width=960",
-          "language" => "english",
-          "category" => ["technology"],
-      ]];
+        return 'newsdata';
+    }
+
+    /** Auth is a query param for NewsData */
+    protected function authQuery(): array
+    {
+        return ['apiKey' => $this->apiKey];
+    }
+
+    /** Map Carbon $since → provider’s `from_date` (many plans support it) */
+    protected function queryForSince(?Carbon $since): array
+    {
+        return array_filter([
+//             'from_date' => $since?->toDateString(),
+//             'pageSize'  => $this->defaults['pageSize'] ?? 10,
+        ], fn ($value) => $value !== null && $value !== '');
+    }
+
+    /** Pull results array */
+    protected function extractItems(array $json): array
+    {
+        return (array) ($json['results'] ?? []);
+    }
+
+    protected function nextPageParams(array $json, array $currentQuery): ?array
+    {
+        $nextToken = $json['nextPage'] ?? null;
+        if (is_string($nextToken) && trim($nextToken) !== '') {
+            // Keep existing filters; just add the token as `page`
+            $updatedQuery = $currentQuery;
+            $updatedQuery['page'] = $nextToken;
+            return $updatedQuery;
+        }
+
+        // No token → no more pages
+        return null;
     }
 
 }
