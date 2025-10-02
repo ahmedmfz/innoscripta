@@ -9,6 +9,7 @@ Ingest and normalize news from multiple providers (NewsAPI, The Guardian, NewsDa
 - [Quick start](#quick-start)
 - [Configuration](#configuration)
 - [Running](#running)
+- [API & Docs](#api--docs)
 - [Scheduling (Laravel 11+)](#scheduling-laravel-11)
 - [Data flow](#data-flow)
 - [Extending: add a new source](#extending-add-a-new-source)
@@ -129,6 +130,23 @@ php artisan news:ingest --source=guardian --since="2025-10-01"
 
 - `--source=`: `all | newsdata | newsapi | guardian`
 - `--since=`: ISO8601 or relative (e.g., `-2 hours`)
+
+---
+
+## API & Docs
+
+- **Open the Swagger UI:**  
+  Visit: `http(s)://<your-app-host>/api/documentation`
+
+- **(Optional) JSON spec:**  
+  `http(s)://<your-app-host>/api/documentation.json`
+
+- **Regenerate docs after changing annotations:**
+  ```bash
+  php artisan l5-swagger:generate
+  ```
+
+> If you protect the docs, ensure your `l5-swagger` config/middleware matches your auth setup. By default, L5-Swagger serves the UI at `/api/documentation`.
 
 ---
 

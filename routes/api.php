@@ -6,7 +6,6 @@ use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\ArticleController;
 
 
-
 Route::get('sources', [SourceController::class, 'index']);
 Route::get('categories', [CategoryController::class, 'index']);
 Route::get('articles', [ArticleController::class, 'index']);
